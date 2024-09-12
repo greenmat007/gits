@@ -1,8 +1,0 @@
-test
-aws_secrets="sdsdsd2322323435334345%%^$#$%^&#@#$%^&"
-aws_secret="AKIAIMNOJVGFDXXXE4OA"
-aws_secret="AKIAIMNOJVGFDXXXE4OA"
-aws_secret="AKIAIMNOJVGFDXXXE4OA"
-aws_secret="AKIAIMNOJVGFDXXXE4OA"
-test
-test
