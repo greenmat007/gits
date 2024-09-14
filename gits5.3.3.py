@@ -265,6 +265,7 @@ def run_git_commit(command):
     Run a git command for commit with the given options passed as a list of arguments.
     :param command: List of git options and arguments (e.g., ['commit', '-m', 'message'] or ['commit', '--amend']).
     """
+    leaks_found=False
     try:
         # Detect if '--amend' is used without '-m'
         if '--amend' in command and '-m' not in command:
@@ -276,7 +277,7 @@ def run_git_commit(command):
             raise ValueError("Error: You must provide a commit message using the '-m' option or use '--amend' to modify the previous commit.")
 
         # Run Gitleaks if there are staged files, otherwise skip the check
-        if not is_repo_empty() and not has_staged_changes():
+        if not is_repo_empty() and not has_staged_changes() and  '--amend'  in command:
             print("No staged changes detected, proceeding with commit message modification only.")
         else:
             leaks_found = run_gitleaks()
