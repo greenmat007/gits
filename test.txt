@@ -3,4 +3,4 @@ test
 test
 test
 test
-"token":"NMIfyYncKcRALEXAMPLE"
+export AWS_ACCESS_KEY_ID ="NMIfyYncKcRALEXAMPLE"
