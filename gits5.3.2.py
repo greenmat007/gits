@@ -266,6 +266,14 @@ def run_git_commit(command):
     :param command: List of git options and arguments (e.g., ['commit', '-m', 'message'] or ['commit', '--amend']).
     """
     try:
+
+        # Detect if '--amend' is used without '-m'
+        if '--amend' in command and '-m' not in command:
+            # Inform the user that amend editor mode is not supported and ask to use -m
+            print("amend editor mode is not supported. Please use the '-m' option with '--amend' to provide a commit message inline.")
+            return
+        
+
         # Run Gitleaks programmatically before proceeding with the commit
         leaks_found = run_gitleaks()
 
@@ -292,58 +300,6 @@ def run_git_commit(command):
             print(result.stdout.strip())
             return
 
-        # Check if '-m' is provided for the commit message
-        if '-m' not in command and '--amend' in command:
-            # If no '-m' and --amend is provided, allow the user to amend the commit in the editor
-            print("Opening editor to amend commit message.")
-            
-            # Run the original amend command to open the editor
-            result = subprocess.run(
-                git_command,
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                cwd=os.getcwd()
-            )
-            if result.returncode != 0:
-                raise Exception(f"Git commit command failed: {result.stderr.strip()}")
-            print(result.stdout.strip())
-
-            # After the editor is closed, append the encrypted commit ID and amend again
-            print("Amending the commit message to include encrypted commit ID.")
-            
-            # Get the latest commit ID
-            latest_commit_id = get_latest_commit_id()
-            aes_key = derive_aes_key_from_commit_id(latest_commit_id)
-            encrypted_commit_id = encrypt_data(latest_commit_id, aes_key)
-
-            # Retrieve the amended commit message
-            amend_message_command = ['git', 'log', '-1', '--format=%B']
-            amend_result = subprocess.run(
-                amend_message_command,
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                cwd=os.getcwd()
-            )
-            if amend_result.returncode != 0:
-                raise Exception(f"Failed to retrieve latest commit message: {amend_result.stderr.strip()}")
-            
-            # Append the encrypted commit ID to the commit message
-            new_commit_message = f"{amend_result.stdout.strip()} | Enc: {encrypted_commit_id}"
-
-            # Amend the commit again with the new message
-            amend_command = ['git', 'commit', '--amend', '-m', new_commit_message]
-            final_amend_result = subprocess.run(
-                amend_command,
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                cwd=os.getcwd()
-            )
-            if final_amend_result.returncode != 0:
-                raise Exception(f"Git commit --amend failed: {final_amend_result.stderr.strip()}")
-            print(final_amend_result.stdout.strip())
 
         elif '-m' in command:
             # Get the latest commit ID before proceeding
@@ -385,6 +341,7 @@ def run_git_commit(command):
 
     except Exception as e:
         print(f"Error: {e}")
+
 
 # Function to extract the encrypted data from the commit message
 def extract_encrypted_data(commit_message):
