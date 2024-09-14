@@ -260,11 +260,10 @@ def confirm_false_positive():
         else:
             print("Invalid input. Please type 'yes' or 'no'.")
 
-# Function to run git command with encrypted latest commit ID for 'git commit'
 def run_git_commit(command):
     """
     Run a git command for commit with the given options passed as a list of arguments.
-    :param command: List of git options and arguments (e.g., ['commit', '-m', 'message']).
+    :param command: List of git options and arguments (e.g., ['commit', '-m', 'message'] or ['commit', '--amend']).
     """
     try:
         # Run Gitleaks programmatically before proceeding with the commit
@@ -278,6 +277,7 @@ def run_git_commit(command):
 
         git_command = ['git', 'commit'] + command
 
+        # Check if the repository is empty, skip commit message modification if it is
         if is_repo_empty():
             print("This is the first commit. Skipping commit message modification.")
             result = subprocess.run(
@@ -287,38 +287,99 @@ def run_git_commit(command):
                 stderr=subprocess.PIPE,
                 cwd=os.getcwd()
             )
-
+            if result.returncode != 0:
+                raise Exception(f"Git commit command failed: {result.stderr.strip()}")
             print(result.stdout.strip())
             return
 
-        # Get the latest commit ID and derive AES key from it
-        latest_commit_id = get_latest_commit_id()
-        if not latest_commit_id:
-            print("Cannot retrieve latest commit ID.")
-            return
+        # Check if '-m' is provided for the commit message
+        if '-m' not in command and '--amend' in command:
+            # If no '-m' and --amend is provided, allow the user to amend the commit in the editor
+            print("Opening editor to amend commit message.")
+            
+            # Run the original amend command to open the editor
+            result = subprocess.run(
+                git_command,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=os.getcwd()
+            )
+            if result.returncode != 0:
+                raise Exception(f"Git commit command failed: {result.stderr.strip()}")
+            print(result.stdout.strip())
 
-        # Dynamically generate the AES key from the latest commit ID
-        aes_key = derive_aes_key_from_commit_id(latest_commit_id)
+            # After the editor is closed, append the encrypted commit ID and amend again
+            print("Amending the commit message to include encrypted commit ID.")
+            
+            # Get the latest commit ID
+            latest_commit_id = get_latest_commit_id()
+            aes_key = derive_aes_key_from_commit_id(latest_commit_id)
+            encrypted_commit_id = encrypt_data(latest_commit_id, aes_key)
 
-        # Encrypt the latest commit ID using the derived AES key
-        encrypted_commit_id = encrypt_data(latest_commit_id, aes_key)
+            # Retrieve the amended commit message
+            amend_message_command = ['git', 'log', '-1', '--format=%B']
+            amend_result = subprocess.run(
+                amend_message_command,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=os.getcwd()
+            )
+            if amend_result.returncode != 0:
+                raise Exception(f"Failed to retrieve latest commit message: {amend_result.stderr.strip()}")
+            
+            # Append the encrypted commit ID to the commit message
+            new_commit_message = f"{amend_result.stdout.strip()} | Enc: {encrypted_commit_id}"
 
-        # Modify the commit message to include the encrypted commit ID
-        for i, arg in enumerate(git_command):
-            if arg == '-m' and i + 1 < len(git_command):
-                git_command[i + 1] = f"{git_command[i + 1]} | Enc: {encrypted_commit_id}"
-                break
+            # Amend the commit again with the new message
+            amend_command = ['git', 'commit', '--amend', '-m', new_commit_message]
+            final_amend_result = subprocess.run(
+                amend_command,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=os.getcwd()
+            )
+            if final_amend_result.returncode != 0:
+                raise Exception(f"Git commit --amend failed: {final_amend_result.stderr.strip()}")
+            print(final_amend_result.stdout.strip())
 
-        result = subprocess.run(
-            git_command,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            cwd=os.getcwd()
-        )
+        elif '-m' in command:
+            # Get the latest commit ID before proceeding
+            latest_commit_id = get_latest_commit_id()
+            if not latest_commit_id:
+                print("Cannot retrieve latest commit ID.")
+                return
 
+            # Dynamically generate the AES key from the latest commit ID
+            aes_key = derive_aes_key_from_commit_id(latest_commit_id)
 
-        print(result.stdout.strip())
+            # Encrypt the latest commit ID using the derived AES key
+            encrypted_commit_id = encrypt_data(latest_commit_id, aes_key)
+
+            # Modify the commit message inline (when using -m)
+            for i, arg in enumerate(git_command):
+                if arg == '-m' and i + 1 < len(git_command):
+                    git_command[i + 1] = f"{git_command[i + 1]} | Enc: {encrypted_commit_id}"
+                    break
+
+            # Run the git commit command with the updated message
+            result = subprocess.run(
+                git_command,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=os.getcwd()
+            )
+            if result.returncode != 0:
+                raise Exception(f"Git commit command failed: {result.stderr.strip()}")
+            print(result.stdout.strip())
+
+        else:
+            # If neither -m nor --amend was provided, throw an error
+            raise ValueError("Error: The '-m' option or '--amend' is required.")
+
         if leaks_found:
             print("\nWARNING: Leaks were detected by Gitleaks. Commit has proceeded, but you should review and address the leaks.")
 
