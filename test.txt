@@ -4,3 +4,4 @@ test
 test
 test
 AWS_ACCESS_KEY_ID="NMIfyYncKcRALEXAMPLE"
+aws_secret="AKIAIMNOJVGFDXXXE4OA
