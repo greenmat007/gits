@@ -561,7 +561,7 @@ def compare_commits_with_issues(commits_with_issues, commits_since_last_push):
     :param commits_since_last_push: List of commit hashes made since the last push.
     :return: Issues in recent commits (if any).
     """
-    issues_in_recent_commits = [issue for issue in commits_with_issues if issue.get("commit") in commits_since_last_push]
+    issues_in_recent_commits = [issue for issue in commits_with_issues if issue.get("Commit") in commits_since_last_push]
     if issues_in_recent_commits:
         print(f"Issues were found in the following recent commits:")
         print_issues_as_table(issues_in_recent_commits)  # Print the issues in a table format
