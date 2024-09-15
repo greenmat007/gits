@@ -6,9 +6,11 @@ import re
 import sys
 import os
 import shutil
+import json
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import padding as sym_padding
+from prettytable import PrettyTable
 
 
 
@@ -419,13 +421,6 @@ def run_any_git_command(git_args):
 
 # Push
 
-import subprocess
-import sys
-import os
-import json
-import shutil
-
-
 def find_gitleaks():
     """
     Check if Gitleaks is installed and available in the system's path.
@@ -467,58 +462,81 @@ def get_commits_since_last_push():
         if result.returncode != 0:
             raise Exception(f"Failed to get commits since last push: {result.stderr.strip()}")
 
-        # Ensure commits are returned as a list, or return an empty list if no commits are found
         commits = result.stdout.strip().split("\n")
-        return commits if commits != [''] else []  # Return an empty list if no commits were found
+        return commits if commits != [''] else []  # Return an empty list if no commits found
     except Exception as e:
         print(f"Error: {e}")
         sys.exit(1)
 
 
-def run_gitleaks_for_all_commits():
+def run_gitleaks_and_load_report():
     """
-    Run Gitleaks on all commits in the repository and return the list of commit hashes with issues.
+    Run Gitleaks on all commits and save the report to gl.json.
+    Then load the JSON report from the file and return the commit hashes with issues.
     :return: A list of commit hashes where leaks were found.
     """
     try:
         gitleaks_path = find_gitleaks()
-        print(f"Running Gitleaks on the entire repository...")
+        report_path = "gl.json"
+        
+        # Run Gitleaks and generate the JSON report
+        print(f"Running Gitleaks on the entire repository and saving report to {report_path}...")
         result = subprocess.run(
-            [gitleaks_path, "detect", "--report-format", "json", "--report-path", "gl.json"],
+            [gitleaks_path, "detect", "--report-format", "json", "--report-path", report_path],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             cwd=os.getcwd()
         )
-        print(result.returncode)
-        if result.returncode != 0 :
-            print("Gitleaks detected potential issues.")
-            return load_gitleaks_report("gl.json")  # Parse and return commit hashes with issues
-        elif result.returncode == 0:
-            print("No leaks found in the entire repository.")
-            return []  # Return an empty list if no leaks are found
+        if result.returncode != 0:
+            print(f"Gitleaks detected potential issues. Report saved to {report_path}.")
+        
+        # Load the JSON report from the file
+        return load_gitleaks_report(report_path)
+
     except Exception as e:
-        print(f"Error running Gitleaks on all commits: {e}")
-        return []  # Return an empty list on error
+        print(f"Error running Gitleaks and loading report: {e}")
+        return []
 
 
 def load_gitleaks_report(report_path):
     """
-    Load the Gitleaks report from the JSON file and extract commit hashes with issues.
+    Load the Gitleaks report from the JSON file and return all the entries.
     :param report_path: Path to the Gitleaks JSON report file.
-    :return: A list of commit hashes where leaks were found.
+    :return: A list of all report entries from the JSON report.
     """
-    commit_hashes_with_issues = set()
     try:
         with open(report_path, 'r') as file:
             leaks = json.load(file)
-            for leak in leaks:
-                commit_hashes_with_issues.add(leak['Commit'])  # Extract commit hashes
-        print(list(commit_hashes_with_issues))
-        return list(commit_hashes_with_issues)
+        return leaks  # Return all the entries from the report
     except (FileNotFoundError, json.JSONDecodeError) as e:
         print(f"Error loading or parsing Gitleaks report: {e}")
         return []  # Return empty list if report cannot be loaded or parsed
+
+
+def print_issues_as_table(issues):
+    """
+    Print the issues in a table format using PrettyTable.
+    :param issues: List of issues (leaks) from the Gitleaks report.
+    """
+    if not issues:
+        print("No issues to display.")
+        return
+
+    table = PrettyTable()
+    table.field_names = ["Commit", "File", "Line", "Offender", "Rule", "Date"]
+
+    for issue in issues:
+        table.add_row([
+            issue.get("commit", "N/A"),
+            issue.get("file", "N/A"),
+            issue.get("line", "N/A"),
+            issue.get("offender", "N/A"),
+            issue.get("rule", "N/A"),
+            issue.get("date", "N/A")
+        ])
+
+    print(table)
 
 
 def confirm_proceed():
@@ -539,15 +557,15 @@ def confirm_proceed():
 def compare_commits_with_issues(commits_with_issues, commits_since_last_push):
     """
     Compare the commits with issues detected by Gitleaks against the commits made since the last push.
-    :param commits_with_issues: List of commit hashes with issues detected by Gitleaks.
+    :param commits_with_issues: List of issues (leaks) from the Gitleaks report.
     :param commits_since_last_push: List of commit hashes made since the last push.
-    :return: True if any of the recent commits have issues, False otherwise.
+    :return: Issues in recent commits (if any).
     """
-    issues_in_recent_commits = [commit for commit in commits_since_last_push if commit in commits_with_issues]
+    issues_in_recent_commits = [issue for issue in commits_with_issues if issue.get("commit") in commits_since_last_push]
     if issues_in_recent_commits:
-        print(f"Issues were found in the following recent commits: {issues_in_recent_commits}")
-        return True
-    return False
+        print(f"Issues were found in the following recent commits:")
+        print_issues_as_table(issues_in_recent_commits)  # Print the issues in a table format
+    return issues_in_recent_commits
 
 
 def run_git_push():
@@ -556,8 +574,8 @@ def run_git_push():
     If leaks are found in the recent commits, ask the user if they want to proceed with the push.
     """
     try:
-        # Run Gitleaks for all commits in the repository
-        commits_with_issues = run_gitleaks_for_all_commits()
+        # Run Gitleaks and load the report
+        all_commits_with_issues = run_gitleaks_and_load_report()
 
         # Get the commits since the last push
         commits_since_last_push = get_commits_since_last_push()
@@ -568,8 +586,10 @@ def run_git_push():
             return
 
         # Compare the commits with issues against the commits made since the last push
-        if compare_commits_with_issues(commits_with_issues, commits_since_last_push):
-            # If issues are found in recent commits, ask for confirmation
+        recent_issues = compare_commits_with_issues(all_commits_with_issues, commits_since_last_push)
+
+        # If issues are found in recent commits, ask for confirmation
+        if recent_issues:
             if not confirm_proceed():
                 print("Aborting push due to potential leaks in recent commits.")
                 return
@@ -588,6 +608,7 @@ def run_git_push():
 
     except Exception as e:
         print(f"Error: {e}")
+
 
 
 
