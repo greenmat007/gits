@@ -419,6 +419,13 @@ def run_any_git_command(git_args):
 
 # Push
 
+import subprocess
+import sys
+import os
+import json
+import shutil
+
+
 def find_gitleaks():
     """
     Check if Gitleaks is installed and available in the system's path.
@@ -429,8 +436,7 @@ def find_gitleaks():
     if gitleaks_path:
         return gitleaks_path
     else:
-        # Gitleaks not found, ask the user to input the location
-        print("Gitleaks was not found in the system's PATH. Please add in the PATH to proceed.")
+        print("Gitleaks was not found in the system's PATH. Please add it to the PATH to proceed.")
         sys.exit(1)
 
 
@@ -461,35 +467,58 @@ def get_commits_since_last_push():
         if result.returncode != 0:
             raise Exception(f"Failed to get commits since last push: {result.stderr.strip()}")
 
-        return result.stdout.strip().split("\n")
+        # Ensure commits are returned as a list, or return an empty list if no commits are found
+        commits = result.stdout.strip().split("\n")
+        return commits if commits != [''] else []  # Return an empty list if no commits were found
     except Exception as e:
         print(f"Error: {e}")
         sys.exit(1)
 
 
-def run_gitleaks_on_commit(commit_hash):
+def run_gitleaks_for_all_commits():
     """
-    Run Gitleaks on a specific commit.
-    :param commit_hash: The commit hash to check.
-    :return: True if leaks are found, False otherwise.
+    Run Gitleaks on all commits in the repository and return the list of commit hashes with issues.
+    :return: A list of commit hashes where leaks were found.
     """
     try:
         gitleaks_path = find_gitleaks()
-        print(f"Running Gitleaks on commit {commit_hash}...")
+        print(f"Running Gitleaks on the entire repository...")
         result = subprocess.run(
-            [gitleaks_path, "detect", "--commit", commit_hash],
+            [gitleaks_path, "detect", "--report-format", "json", "--report-path", "gl.json"],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             cwd=os.getcwd()
         )
-        if result.returncode != 0:
-            print(f"Gitleaks found potential issues in commit {commit_hash}:\n{result.stdout}")
-            return True
-        return False
+        print(result.returncode)
+        if result.returncode != 0 :
+            print("Gitleaks detected potential issues.")
+            return load_gitleaks_report("gl.json")  # Parse and return commit hashes with issues
+        elif result.returncode == 0:
+            print("No leaks found in the entire repository.")
+            return []  # Return an empty list if no leaks are found
     except Exception as e:
-        print(f"Error running Gitleaks on commit {commit_hash}: {e}")
-        return True
+        print(f"Error running Gitleaks on all commits: {e}")
+        return []  # Return an empty list on error
+
+
+def load_gitleaks_report(report_path):
+    """
+    Load the Gitleaks report from the JSON file and extract commit hashes with issues.
+    :param report_path: Path to the Gitleaks JSON report file.
+    :return: A list of commit hashes where leaks were found.
+    """
+    commit_hashes_with_issues = set()
+    try:
+        with open(report_path, 'r') as file:
+            leaks = json.load(file)
+            for leak in leaks:
+                commit_hashes_with_issues.add(leak['Commit'])  # Extract commit hashes
+        print(list(commit_hashes_with_issues))
+        return list(commit_hashes_with_issues)
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        print(f"Error loading or parsing Gitleaks report: {e}")
+        return []  # Return empty list if report cannot be loaded or parsed
 
 
 def confirm_proceed():
@@ -498,7 +527,7 @@ def confirm_proceed():
     :return: True if the user confirms, False otherwise.
     """
     while True:
-        response = input("Leaks were detected. Do you want to proceed with the push? (yes/no): ").strip().lower()
+        response = input("Leaks were detected in recent commits. Do you want to proceed with the push? (yes/no): ").strip().lower()
         if response == "yes":
             return True
         elif response == "no":
@@ -507,32 +536,42 @@ def confirm_proceed():
             print("Invalid response. Please type 'yes' or 'no'.")
 
 
+def compare_commits_with_issues(commits_with_issues, commits_since_last_push):
+    """
+    Compare the commits with issues detected by Gitleaks against the commits made since the last push.
+    :param commits_with_issues: List of commit hashes with issues detected by Gitleaks.
+    :param commits_since_last_push: List of commit hashes made since the last push.
+    :return: True if any of the recent commits have issues, False otherwise.
+    """
+    issues_in_recent_commits = [commit for commit in commits_since_last_push if commit in commits_with_issues]
+    if issues_in_recent_commits:
+        print(f"Issues were found in the following recent commits: {issues_in_recent_commits}")
+        return True
+    return False
+
 
 def run_git_push():
     """
-    Run the git push command, but first run Gitleaks on all commits made since the last push.
-    If leaks are found, ask the user if they want to proceed with the push.
+    Run the git push command, but first run Gitleaks on all commits and compare against the commits since the last push.
+    If leaks are found in the recent commits, ask the user if they want to proceed with the push.
     """
     try:
+        # Run Gitleaks for all commits in the repository
+        commits_with_issues = run_gitleaks_for_all_commits()
+
         # Get the commits since the last push
-        commits = get_commits_since_last_push()
-        if not commits or commits == ['']:
+        commits_since_last_push = get_commits_since_last_push()
+
+        # If no commits are found since the last push, exit
+        if not commits_since_last_push:
             print("No commits found to push.")
             return
 
-        print(f"Commits since last push: {commits}")
-
-        leaks_found = False
-
-        # Run Gitleaks on each commit since the last push
-        for commit in commits:
-            if run_gitleaks_on_commit(commit):
-                leaks_found = True
-
-        # If leaks are found, ask for confirmation
-        if leaks_found:
+        # Compare the commits with issues against the commits made since the last push
+        if compare_commits_with_issues(commits_with_issues, commits_since_last_push):
+            # If issues are found in recent commits, ask for confirmation
             if not confirm_proceed():
-                print("Aborting push due to potential leaks.")
+                print("Aborting push due to potential leaks in recent commits.")
                 return
 
         # If no leaks or user confirmed, proceed with push
@@ -549,6 +588,7 @@ def run_git_push():
 
     except Exception as e:
         print(f"Error: {e}")
+
 
 
 
