@@ -477,7 +477,7 @@ def run_gitleaks_and_load_report():
     """
     try:
         gitleaks_path = find_gitleaks()
-        report_path = "gl.json"
+        report_path = "../gl.json"
         
         # Run Gitleaks and generate the JSON report
         print(f"Running Gitleaks on the entire repository and saving report to {report_path}...")
@@ -524,18 +524,16 @@ def print_issues_as_table(issues):
         return
 
     table = PrettyTable()
-    table.field_names = ["Commit", "File", "Line", "Offender", "Rule", "Date"]
+    table.field_names = ["StartLine", "Commit", "Secret", "File"]
 
     for issue in issues:
         table.add_row([
-            issue.get("commit", "N/A"),
-            issue.get("file", "N/A"),
-            issue.get("line", "N/A"),
-            issue.get("offender", "N/A"),
-            issue.get("rule", "N/A"),
-            issue.get("date", "N/A")
-        ])
-
+            issue.get("StartLine", "N/A"),
+            issue.get("Commit", "N/A"),
+            issue.get("Secret", "N/A"),
+            issue.get("File", "N/A"),
+        ])    
+        
     print(table)
 
 
@@ -579,6 +577,7 @@ def run_git_push():
 
         # Get the commits since the last push
         commits_since_last_push = get_commits_since_last_push()
+        print(commits_since_last_push)
 
         # If no commits are found since the last push, exit
         if not commits_since_last_push:
