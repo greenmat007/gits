@@ -75,7 +75,7 @@ def run_gitleaks():
     Run Gitleaks programmatically before the Git commit and provide a warning if leaks are present.
     :return: True if leaks are found, False otherwise.
     """
-    find_gitleaks()
+    gitleaks_path = find_gitleaks()
     staged_files = get_staged_files()
     report_path = "../gl.json"
 
