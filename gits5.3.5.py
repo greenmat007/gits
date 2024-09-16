@@ -83,14 +83,12 @@ def run_gitleaks():
         sys.exit(1)
 
     leaks_found = False
+    report_path = "../gl.json"
 
     for file in staged_files:
         try:
             # Run Gitleaks on each individual file
 
-            report_path = "../gl.json"
-            
-            # Run Gitleaks and generate the JSON report
             print(f"Running Gitleaks on the entire repository and saving report to {report_path}...")
             result = subprocess.run(
                 [gitleaks_path, "detect", "--report-format", "json", "--report-path", report_path,"--no-git", "--source", file],
