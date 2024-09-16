@@ -97,6 +97,7 @@ def run_gitleaks():
                 stderr=subprocess.PIPE,
                 cwd=os.getcwd()
             )
+            print(result)
             if result.returncode != 0:
                 print(f"Gitleaks detected potential issues. Report saved to {report_path}.")
                 print_issues_as_table(load_gitleaks_report(report_path))  # Print the issues in a table format
