@@ -77,13 +77,14 @@ def run_gitleaks():
     """
     find_gitleaks()
     staged_files = get_staged_files()
+    report_path = "../gl.json"
 
     if not staged_files:
         print("No files are staged for commit.")
         sys.exit(1)
 
     leaks_found = False
-    report_path = "../gl.json"
+
 
     for file in staged_files:
         try:
