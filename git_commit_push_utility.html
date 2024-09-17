@@ -1,0 +1,185 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Git Commit and Push Utility Documentation</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        h1 { color: #2c3e50; }
+        h2 { color: #34495e; }
+        p { line-height: 1.6; }
+        code { background-color: #f4f4f4; padding: 2px 5px; border-radius: 3px; }
+        pre { background-color: #f4f4f4; padding: 15px; border-radius: 5px; line-height: 1.5; }
+        .highlight { color: #e74c3c; }
+    </style>
+</head>
+<body>
+
+    <h1>Git Commit and Push Utility with Gitleaks and AES Encryption</h1>
+
+    <p>This Python program automates the process of handling Git commits, pushing to repositories, checking for sensitive information leaks using Gitleaks, and ensuring secure commit messages using AES encryption.</p>
+
+    <h2>Key Features:</h2>
+    <ul>
+        <li><strong>Gitleaks Integration</strong>: Detects potential sensitive data (like keys, passwords) using Gitleaks for all staged files or all commits since the last push.</li>
+        <li><strong>AES Encryption for Commit Verification</strong>: Encrypts commit IDs using a dynamically generated AES key, ensuring commit message authenticity.</li>
+        <li><strong>Commit and Push Validation</strong>: Compares commits made since the last push with the Gitleaks scan results, prompting users to review detected leaks.</li>
+        <li><strong>User-Friendly Table Output</strong>: Displays leak information in a structured table format using <code>PrettyTable</code>.</li>
+    </ul>
+
+    <h2>Detailed Breakdown of the Program Components:</h2>
+
+    <h3>1. AES Key Derivation:</h3>
+    <p>The program derives an AES key from the first 32 characters of a commit ID and uses this key to encrypt and decrypt commit information.</p>
+
+    <pre><code>def derive_aes_key_from_commit_id(commit_id):
+    commit_id_bytes = commit_id[:32].encode('utf-8')
+    return commit_id_bytes[:16]</code></pre>
+
+    <h3>2. Gitleaks Integration:</h3>
+    <p>Gitleaks is used to scan staged files and commits for potential leaks. If Gitleaks is not found in the system’s path, the program will notify the user and terminate.</p>
+
+    <pre><code>def find_gitleaks():
+    gitleaks_path = shutil.which("gitleaks")
+    if gitleaks_path:
+        return gitleaks_path
+    else:
+        print("Gitleaks was not found in the system's PATH.")
+        sys.exit(1)</code></pre>
+
+    <p>The function <code>run_gitleaks()</code> scans staged files for leaks before every commit. If leaks are detected, it outputs them in JSON format and displays the results as a table.</p>
+
+    <pre><code>def run_gitleaks():
+    gitleaks_path = find_gitleaks()
+    staged_files = get_staged_files()
+    report_path = "../gl.json"
+    
+    if not staged_files:
+        print("No files are staged for commit.")
+        sys.exit(1)
+    
+    leaks_found = False
+    for file in staged_files:
+        try:
+            print(f"Running Gitleaks on file {file} and saving report to {report_path}...")
+            result = subprocess.run(
+                [gitleaks_path, "detect", "--report-format", "json", "--report-path", report_path, "--no-git", "--source", file],
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
+            if result.returncode != 0:
+                print_issues_as_table(load_gitleaks_report(report_path))
+                leaks_found = True
+            else:
+                print(f"No leaks detected in file: {file}")
+        except Exception as e:
+            print(f"Error running Gitleaks on {file}: {e}")
+</code></pre>
+
+    <h3>3. Commit Message Encryption:</h3>
+    <p>Before each commit, the program encrypts the commit ID using AES encryption. The encryption key is derived dynamically from the commit ID, ensuring that each commit has a unique key.</p>
+
+    <pre><code>def encrypt_data(data, key):
+    padder = sym_padding.PKCS7(algorithms.AES.block_size).padder()
+    padded_data = padder.update(data.encode()) + padder.finalize()
+
+    iv = os.urandom(16)
+    cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
+    encryptor = cipher.encryptor()
+
+    ciphertext = encryptor.update(padded_data) + encryptor.finalize()
+    return (iv + ciphertext).hex()
+
+def decrypt_data(encrypted_data, key):
+    encrypted_bytes = bytes.fromhex(encrypted_data)
+    iv = encrypted_bytes[:16]
+    ciphertext = encrypted_bytes[16:]
+
+    cipher = Cipher(algorithms.AES(key), modes.CBC(iv), backend=default_backend())
+    decryptor = cipher.decryptor()
+
+    padded_data = decryptor.update(ciphertext) + decryptor.finalize()
+    unpadder = sym_padding.PKCS7(algorithms.AES.block_size).unpadder()
+    return unpadder.update(padded_data) + unpadder.finalize()</code></pre>
+
+    <h3>4. Git Commit & Push Logic:</h3>
+    <p>The program dynamically generates the commit message by including the encrypted commit ID. This is done during the execution of <code>run_git_commit()</code>, which also checks if Gitleaks detects any leaks.</p>
+
+    <pre><code>def run_git_commit(command):
+    if '--amend' in command and '-m' not in command:
+        print("Amend editor mode is not supported. Please use the '-m' option with '--amend' to provide a commit message.")
+        return
+    if '-m' not in command and '--amend' not in command:
+        raise ValueError("Error: You must provide a commit message using the '-m' option or '--amend'.")
+
+    if not is_repo_empty() and not has_staged_changes() and '--amend' in command:
+        print("No staged changes detected.")
+    else:
+        leaks_found = run_gitleaks()
+
+        if leaks_found and not confirm_false_positive():
+            print("Aborting commit due to potential leaks.")
+            return
+
+    git_command = ['git', 'commit'] + command
+
+    latest_commit_id = get_latest_commit_id()
+    if latest_commit_id:
+        aes_key = derive_aes_key_from_commit_id(latest_commit_id)
+        encrypted_commit_id = encrypt_data(latest_commit_id, aes_key)
+
+        for i, arg in enumerate(git_command):
+            if arg == '-m' and i + 1 < len(git_command):
+                git_command[i + 1] = f"{git_command[i + 1]} | Enc: {encrypted_commit_id}"
+                break
+
+        result = subprocess.run(git_command, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if result.returncode != 0:
+            raise Exception(f"Git commit failed: {result.stderr.strip()}")
+        print(result.stdout.strip())</code></pre>
+
+    <h3>5. Gitleaks Push Check:</h3>
+    <p>Before pushing commits, the program runs Gitleaks on all commits made since the last push. If leaks are found, the user is prompted to confirm whether to proceed.</p>
+
+    <pre><code>def run_git_push():
+    all_commits_with_issues = run_gitleaks_and_load_report()
+    commits_since_last_push = get_commits_since_last_push()
+
+    if not commits_since_last_push:
+        print("No commits found to push.")
+        return
+
+    recent_issues = compare_commits_with_issues(all_commits_with_issues, commits_since_last_push)
+
+    if recent_issues and not confirm_proceed():
+        print("Aborting push due to potential leaks.")
+        return
+
+    result = subprocess.run(["git", "push"], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if result.returncode != 0:
+        raise Exception(f"Git push failed: {result.stderr.strip()}")
+    print(result.stdout.strip())</code></pre>
+
+    <h3>6. Displaying Results in a Table:</h3>
+    <p>Any leaks detected by Gitleaks are displayed in a structured table using <code>PrettyTable</code>.</p>
+
+    <pre><code>def print_issues_as_table(issues):
+    if not issues:
+        print("No issues to display.")
+        return
+
+    table = PrettyTable()
+    table.field_names = ["StartLine", "Commit", "Secret", "File"]
+    
+    for issue in issues:
+        table.add_row([
+            issue.get("StartLine", "N/A"),
+            issue.get("Commit", "N/A"),
+            issue.get("Secret", "N/A"),
+            issue.get("File", "N/A")
+        ])
+    print(table)</code></pre>
+
+</body>
+</html>
