@@ -1,0 +1,3 @@
+[submodule "cherrypy"]
+	path = cherrypy
+	url = git://gitorious.org/cherrypy_wsgiserver/cherrypy_wsgiserver.git
