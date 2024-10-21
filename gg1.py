@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import subprocess
-import time
 import platform
 import re
 import sys
@@ -36,41 +35,11 @@ product = f"""
  ******************************************
      ___   ___       ___  __    ____ 
     / __) / __)___  / __)(  )  (_  _)
-    \__ \( (__(___)( (__  )(__  _)(_ 
-    (___/ \___)     \___)(____)(____)
+    \\__ \\( (__(___)( (__  )(__  _)(_ 
+    (___/ \\___)     \\___)(____)(____)
     version v0.1
 ******************************************
 """
-
-def run_gitleaks_and_load_report():
-    """
-    Run Gitleaks on all commits and save the report to gl.json.
-    Then load the JSON report from the file and return the commit hashes with issues.
-    :return: A list of commit hashes where leaks were found.
-    """
-    try:
-        gitleaks_path = find_gitleaks()
-        report_path = "../gl.json"
-        
-        # Run Gitleaks and generate the JSON report
-        print(f"Running Gitleaks on the entire repository and saving report to {report_path}...")
-        result = subprocess.run(
-            [gitleaks_path, "detect", "--report-format", "json", "--report-path", report_path],
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            cwd=os.getcwd()
-        )
-        if result.returncode != 0:
-            print(f"Gitleaks detected potential issues. Report saved to {report_path}.")
-        
-        # Load the JSON report from the file
-        return load_gitleaks_report(report_path)
-
-    except Exception as e:
-        print(f"Error running Gitleaks and loading report: {e}")
-        return []
-
 
 
 def find_gitleaks():
@@ -344,95 +313,100 @@ def confirm_false_positive():
         else:
             print("Invalid input. Please type 'yes' or 'no'.")
 
-            import time
-            
-            def run_git_commit(command):
-                global stop_loading_event
-            
-                stop_loading_event = threading.Event()  # Event to stop the loading animation
-                loading_thread = threading.Thread(target=loading_animation, args=("Committing...",))  # Spinner thread
-                start_time = time.time()  # Record the start time
-            
-                try:
-                    loading_thread.start()  # Start the spinner
-                    leaks_found = False
-            
-                    if '--amend' in command and '-m' not in command:
-                        print("Amend editor mode is not supported. Please use the '-m' option with '--amend' to provide a commit message inline.")
-                        return
-            
-                    if '-m' not in command and '--amend' not in command:
-                        raise ValueError("Error: You must provide a commit message using the '-m' option or use '--amend' to modify the previous commit.")
-            
-                    if not is_repo_empty() and not has_staged_changes() and '--amend' in command:
-                        print("No staged changes detected, proceeding with commit message modification only.")
-                    else:
-                        leaks_found = run_gitleaks()
-            
-                        if leaks_found and not confirm_false_positive():
-                            print(f"{RED}Aborting commit due to potential leaks.")
-                            return
-            
-                    git_command = ['git', 'commit'] + command
-            
-                    if is_repo_empty():
-                        print("This is the first commit. Skipping commit message modification.")
-                        result = subprocess.run(
-                            git_command,
-                            text=True,
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE,
-                            cwd=os.getcwd()
-                        )
-                        if result.returncode != 0:
-                            raise Exception(f"Git commit command failed: {result.stderr.strip()}")
-                        print(result.stdout.strip())
-                        return
-            
-                    if '-m' in command:
-                        for i, arg in enumerate(git_command):
-                            if arg == '-m' and i + 1 < len(git_command):
-                                commit_message = git_command[i + 1]
-                                if not check_for_wi_number(commit_message):
-                                    print("Aborting commit due to missing #WI number.")
-                                    return
-            
-                        latest_commit_id = get_latest_commit_id()
-                        if not latest_commit_id:
-                            print("Cannot retrieve latest commit ID.")
-                            return
-            
-                        aes_key = derive_aes_key_from_commit_id(latest_commit_id)
-                        encrypted_commit_id = encrypt_data(latest_commit_id, aes_key)
-            
-                        for i, arg in enumerate(git_command):
-                            if arg == '-m' and i + 1 < len(git_command):
-                                git_command[i + 1] = f"{git_command[i + 1]} | Enc: {encrypted_commit_id}"
-                                break
-            
-                        result = subprocess.run(
-                            git_command,
-                            text=True,
-                            stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE,
-                            cwd=os.getcwd()
-                        )
-                        if result.returncode != 0:
-                            raise Exception(f"Git commit command failed: {result.stderr.strip()}")
-                        print(result.stdout.strip())
-            
-                    if leaks_found:
-                        print(f"{RED}\nWARNING: Leaks were detected by Gitleaks. Commit has proceeded, but you should review and address the leaks.\n{RESET}")
-            
-                finally:
-                    # Ensure the loading spinner runs for at least 2 seconds
-                    elapsed_time = time.time() - start_time
-                    if elapsed_time < 2:
-                        time.sleep(2 - elapsed_time)
-            
-                    stop_loading_event.set()  # Stop the spinner
-                    loading_thread.join()  # Wait for the spinner thread to finish
+def run_git_commit(command):
+    """
+    Run a git command for commit with the given options passed as a list of arguments.
+    """
+    print(product)
+    print(f"{RESET}")
+    leaks_found=False
+    try:
+        # Detect if '--amend' is used without '-m'
+        if '--amend' in command and '-m' not in command:
+            print("Amend editor mode is not supported. Please use the '-m' option with '--amend' to provide a commit message inline.")
+            return
 
+        # If neither -m nor --amend was provided, throw an error early
+        if '-m' not in command and '--amend' not in command:
+            raise ValueError("Error: You must provide a commit message using the '-m' option or use '--amend' to modify the previous commit.")
+
+        # Run Gitleaks if there are staged files, otherwise skip the check
+        if not is_repo_empty() and not has_staged_changes() and  '--amend'  in command:
+            print("No staged changes detected, proceeding with commit message modification only.")
+        else:
+            leaks_found = run_gitleaks()
+
+            # If leaks are found, ask for confirmation
+            if leaks_found:
+                if not confirm_false_positive():
+                    print(f"{RED}Aborting commit due to potential leaks.")
+                    print(f"{RESET}")
+                    return
+
+        git_command = ['git', 'commit'] + command
+
+        # Check if the repository is empty, skip commit message modification if it is
+        if is_repo_empty():
+            print("This is the first commit. Skipping commit message modification.")
+            result = subprocess.run(
+                git_command,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=os.getcwd()
+            )
+            if result.returncode != 0:
+                raise Exception(f"Git commit command failed: {result.stderr.strip()}")
+            print(result.stdout.strip())
+            return
+
+        # Handle the case where '-m' is provided (including with --amend)
+        if '-m' in command:
+            for i, arg in enumerate(git_command):
+                if arg == '-m' and i + 1 < len(git_command):
+                    commit_message = git_command[i + 1]
+                    if not check_for_wi_number(commit_message):
+                        print("Aborting commit due to missing #WI number.")
+                        return
+            
+            # Get the latest commit ID before proceeding
+            latest_commit_id = get_latest_commit_id()
+            if not latest_commit_id:
+                print("Cannot retrieve latest commit ID.")
+                return
+
+            # Dynamically generate the AES key from the latest commit ID
+            aes_key = derive_aes_key_from_commit_id(latest_commit_id)
+
+            # Encrypt the latest commit ID using the derived AES key
+            encrypted_commit_id = encrypt_data(latest_commit_id, aes_key)
+
+            # Modify the commit message inline (when using -m)
+            for i, arg in enumerate(git_command):
+                if arg == '-m' and i + 1 < len(git_command):
+                    git_command[i + 1] = f"{git_command[i + 1]} | Enc: {encrypted_commit_id}"
+                    break
+            print(product)
+            print(f"{RESET}")
+            # Run the git commit command with the updated message
+            result = subprocess.run(
+                git_command,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=os.getcwd()
+            )
+            if result.returncode != 0:
+                raise Exception(f"Git commit command failed: {result.stderr.strip()}")
+            print(result.stdout.strip())
+
+        # Inform the user about leaks after committing
+        if leaks_found:
+            print(f"{RED}\nWARNING: Leaks were detected by Gitleaks. Commit has proceeded, but you should review and address the leaks.\n{RESET}")
+
+
+    except Exception as e:
+        print(f"Error: {e}")
 
 
 def has_staged_changes():
