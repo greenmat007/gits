@@ -661,11 +661,32 @@ Run the git main Program
 """
 
 if __name__ == "__main__":
+ 
     if len(sys.argv) < 2:
-        print(product)
+        print(product)  # Display product information with banner
         print(f"{RESET}")
-        print("Usage: gits <commit|verify|status|...> [args]")
+        print("Welcome to the GITS CLI Tool!")
+        print("=========================================")
+        print("A utility for performing Git operations with")
+        print("additional security checks and automated tasks.")
+        print("")
+        print(f"{ITALIC}Usage:{RESET}")
+        print("  gits <command> [args]")
+        print("")
+        print(f"{ITALIC}Available Commands:{RESET}")
+        print("  commit      Commit changes with security checks")
+        print("  verify      Verify commit integrity with commit ID")
+        print("  push        Push changes to the repository with checks")
+        print("  status      Show the current status of the Git repository")
+        print("")
+        print(f"{RED}Example usage:{RESET}")
+        print("  gits commit -m 'Your commit message'  # Commit with a message")
+        print("  gits verify <commit_id>               # Verify a commit")
+        print("")
+        print("For more details on each command, run 'gits <command> --help'")
         sys.exit(0)
+
+
 
     action = sys.argv[1]
 
