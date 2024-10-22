@@ -141,6 +141,7 @@ def run_gitleaks():
         sys.exit(1)
 
     leaks_found = False
+    
 
 
     for file in staged_files:
