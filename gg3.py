@@ -496,9 +496,10 @@ def run_git_commit(command):
 def get_commit_message_from_editor():
     """
     Opens the user's default editor to write the commit message, reads the message, and returns it.
+    On Windows, 'notepad' is used by default if no other editor is configured.
     """
-    # Get the editor from the environment variable or fall back to 'vi'
-    editor = os.getenv('EDITOR', 'vi')
+    # Use 'EDITOR' environment variable or default to 'notepad' for Windows systems
+    editor = os.getenv('EDITOR', 'notepad' if os.name == 'nt' else 'vi')
 
     # Create a temporary file to hold the commit message
     with tempfile.NamedTemporaryFile(suffix=".tmp", delete=False) as temp_file:
@@ -517,6 +518,7 @@ def get_commit_message_from_editor():
         os.remove(temp_file_name)
 
     return commit_message
+
 
 
 
