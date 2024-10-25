@@ -11,6 +11,7 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import padding as sym_padding
 from prettytable import PrettyTable
+from yaspin import yaspin
 
 
 
@@ -325,6 +326,9 @@ def run_git_commit(command):
     print(product)  # Display banner
     print(f"{RESET}")
     
+    with yaspin(text="Loading", color="yellow") as spinner:
+        time.sleep(10)  # time consuming code    
+    
     leaks_found = False
     commit_message = None
     try:
@@ -499,7 +503,7 @@ def get_commit_message_from_editor():
     On Windows, 'notepad' is used by default if no other editor is configured.
     """
     # Use 'EDITOR' environment variable or default to 'notepad' for Windows systems
-    editor = os.getenv('EDITOR', 'notepad' if os.name == 'nt' else 'vi')
+    editor = os.getenv('EDITOR', 'vim' if os.name == 'nt' else 'vi')
 
     # Create a temporary file to hold the commit message
     with tempfile.NamedTemporaryFile(suffix=".tmp", delete=False) as temp_file:
