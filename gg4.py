@@ -812,7 +812,7 @@ def compare_commits_with_issues(commits_with_issues, commits_since_last_push):
     return issues_in_recent_commits
 
 
-def run_git_push():
+def run_git_push(git_args):
     """
     Run the git push command, but first run Gitleaks on all commits and compare against the commits since the last push.
     If leaks are found in the recent commits, ask the user if they want to proceed with the push.
@@ -843,7 +843,7 @@ def run_git_push():
         print(f"{RESET}")
         # If no leaks or user confirmed, proceed with push
         result = subprocess.run(
-            ["git", "push"],
+            ["git", "push"]+ git_args,
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -900,6 +900,7 @@ if __name__ == "__main__":
         commit_id = sys.argv[2]
         verify_commit_message(commit_id)
     elif action == "push":
-        run_git_push() 
+        print (sys.argv[1:])
+        run_git_push(sys.argv[2:]) 
     else:
         run_any_git_command(sys.argv[1:])
