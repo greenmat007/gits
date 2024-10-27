@@ -603,11 +603,14 @@ import subprocess
 import os
 import sys
 
+import subprocess
+import os
+import sys
+
 def get_commits_since_last_push():
     """
-    Get the list of commits made since the last push to the current branch,
-    or if the branch has not been pushed, since its creation by detecting
-    the branch it diverged from.
+    Get the list of commits made since the last push to the upstream branch,
+    or if the branch has no upstream, since its creation.
     :return: A list of commit hashes.
     """
     try:
@@ -625,50 +628,67 @@ def get_commits_since_last_push():
         
         branch_name = result.stdout.strip().split("/")[-1]
 
-        # Step 2: Identify the parent branch by checking branch creation history
+        # Step 2: Get the upstream branch (if it exists)
         result = subprocess.run(
-            ["git", "reflog", "show", "--format=%gD"],
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            cwd=os.getcwd()
-        )
-
-        if result.returncode != 0:
-            raise Exception(f"Failed to retrieve branch history: {result.stderr.strip()}")
-
-        # Identify the branch from which the current branch was created
-        parent_branch = None
-        for line in result.stdout.strip().splitlines():
-            if line.startswith("branch: Created from"):
-                parent_branch = line.split(" ")[-1]
-                break
-
-        if not parent_branch:
-            raise Exception("Unable to determine the parent branch.")
-
-        # Step 3: Find the common ancestor commit between the parent branch and HEAD
-        result = subprocess.run(
-            ["git", "merge-base", parent_branch, "HEAD"],
+            ["git", "for-each-ref", "--format=%(upstream:short)", f"refs/heads/{branch_name}"],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             cwd=os.getcwd()
         )
         
-        if result.returncode != 0:
-            raise Exception(f"Failed to get merge base: {result.stderr.strip()}")
-        
-        merge_base_commit = result.stdout.strip()
+        upstream_branch = result.stdout.strip()
 
-        # Step 4: Get the list of commits from the merge base to HEAD
-        result = subprocess.run(
-            ["git", "log", f"{merge_base_commit}..HEAD", "--format=%H"],
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            cwd=os.getcwd()
-        )
+        # If there's no upstream branch, get commits since branch creation
+        if not upstream_branch:
+            print("No upstream branch found. Getting commits since branch creation.")
+            # Find the first commit where this branch diverged from the initial commit
+            result = subprocess.run(
+                ["git", "log", "--reverse", "--format=%H", branch_name],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=os.getcwd()
+            )
+            
+            if result.returncode != 0:
+                raise Exception(f"Failed to determine branch creation point: {result.stderr.strip()}")
+            
+            branch_creation_commit = result.stdout.strip().split("\n")[0]
+
+            # Get the list of commits from the branch creation point to HEAD
+            result = subprocess.run(
+                ["git", "log", f"{branch_creation_commit}..HEAD", "--format=%H"],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=os.getcwd()
+            )
+        
+        # If upstream branch exists, get commits since last push
+        else:
+            # Step 3: Get the common ancestor commit between upstream and HEAD
+            result = subprocess.run(
+                ["git", "merge-base", upstream_branch, "HEAD"],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=os.getcwd()
+            )
+            
+            if result.returncode != 0:
+                raise Exception(f"Failed to get merge base: {result.stderr.strip()}")
+            
+            merge_base_commit = result.stdout.strip()
+
+            # Step 4: Get the list of commits from the merge base to HEAD
+            result = subprocess.run(
+                ["git", "log", f"{merge_base_commit}..HEAD", "--format=%H"],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=os.getcwd()
+            )
 
         # Check for errors in retrieving commits
         if result.returncode != 0:
